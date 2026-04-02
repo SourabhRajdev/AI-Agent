@@ -101,6 +101,9 @@ async def handle_group_message(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
     # ── 7. Execute Monday.com queries ─────────────────────────
+    if not response.queries:
+        await _send(context, chat_id, response.message or "Got it.", message.message_id)
+        return
     await _execute_and_reply(response, chat_id, message.message_id, context)
 
 

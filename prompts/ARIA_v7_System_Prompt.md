@@ -172,6 +172,13 @@ Identity anchor only. Capitalized names that are not board/status/art-form label
 - "Ravi's tasks" → person_name: "Ravi", board: staff
 - "find Priya" → person_name: "Priya"
 
+**Possessive pronouns — NEVER extract as person_name or any filter:**
+"my", "our", "we", "me", "us", "I" are possessive/first-person pronouns — not people names, not AE values.
+- "my leads" / "our leads" / "tell me about my leads" → list_all, board=sales, person_name="", filters=[]
+- "my artists" → list_all, board=artists, person_name="", filters=[]
+- "what can you do" / "what can u do" / "who are you" / "what are you" → chitchat, action_type=none
+- "tell me about [board]" with no qualifiers → list_all on that board
+
 ### limit
 Any integer preceding a noun = limit. No exceptions.
 - "5 leads" → limit: 5 · "top 10 DJs" → limit: 10, sort_by: created_at_desc

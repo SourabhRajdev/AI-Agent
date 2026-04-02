@@ -31,6 +31,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+async def global_error_handler(update: object, context) -> None:
+    """Catch all unhandled exceptions — prevents application from crashing."""
+    logger.error("Unhandled exception in update handler", exc_info=context.error)
+
+
 async def post_init(application: Application) -> None:
     """Called once after the Application is initialized."""
     logger.info("Loading Monday.com board schemas…")
@@ -45,6 +50,8 @@ def build_application() -> Application:
         .post_init(post_init)
         .build()
     )
+
+    app.add_error_handler(global_error_handler)
 
     # Commands
     app.add_handler(CommandHandler("start", handle_start))
@@ -68,6 +75,14 @@ def build_application() -> Application:
     )
 
     return app
+
+
+async def _safe_reply(message, text: str) -> None:
+    """Reply with Markdown, fall back to plain text if parse fails."""
+    try:
+        await message.reply_text(text, parse_mode="Markdown")
+    except Exception:
+        await message.reply_text(text)
 
 
 async def handle_private_message(update: Update, context) -> None:
@@ -100,7 +115,7 @@ async def handle_private_message(update: Update, context) -> None:
                 )
             results = await monday_client.execute_queries(queries)
             reply_text = result_formatter.format_results(results, pending)
-            await message.reply_text(reply_text, parse_mode="Markdown")
+            await _safe_reply(message, reply_text)
             return
         elif conf_store.is_cancellation(text):
             conf_store.clear(chat_id, user_id)
@@ -115,14 +130,11 @@ async def handle_private_message(update: Update, context) -> None:
 
     if response.awaiting_confirmation:
         conf_store.save(chat_id, user_id, response)
-        await message.reply_text(
-            response.message or "Confirm this action? Reply *yes* or *no*.",
-            parse_mode="Markdown",
-        )
+        await _safe_reply(message, response.message or "Confirm this action? Reply *yes* or *no*.")
         return
 
-    if not response.needs_data:
-        await message.reply_text(response.message or "Got it.", parse_mode="Markdown")
+    if not response.needs_data or not response.queries:
+        await _safe_reply(message, response.message or "Got it.")
         return
 
     queries = monday_client.inject_all_board_ids(response.queries)
@@ -134,7 +146,7 @@ async def handle_private_message(update: Update, context) -> None:
         )
     results = await monday_client.execute_queries(queries)
     reply_text = result_formatter.format_results(results, response)
-    await message.reply_text(reply_text, parse_mode="Markdown")
+    await _safe_reply(message, reply_text)
 
 
 def main() -> None:
