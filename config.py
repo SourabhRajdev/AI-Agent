@@ -8,9 +8,9 @@ TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 
 # ── AI Model ────────────────────────────────────────────────
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
-GEMINI_MODEL = "gemini-2.5-flash"
+GEMINI_MODEL = "gemini-2.0-flash"
 GEMINI_TEMPERATURE = 0.3
-GEMINI_MAX_TOKENS = 1024
+GEMINI_MAX_TOKENS = 4096
 
 # ── Monday.com ──────────────────────────────────────────────
 MONDAY_API_KEY = os.environ["MONDAY_API_KEY"]
