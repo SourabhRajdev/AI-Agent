@@ -156,10 +156,10 @@ def _format_single_item(index: int, item: dict) -> str:
 
     parts = [f"*{index}. {name}*"]
     for col in col_values:
-        text = col.get("text", "").strip()
+        text = (col.get("text") or "").strip()
         if not text:
             continue
-        label = _column_label(col.get("id", ""), col.get("title", ""))
+        label = _column_label(col.get("id") or "", col.get("title") or "")
         if label:
             parts.append(f"   {label}: {text}")
 
