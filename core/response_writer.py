@@ -25,11 +25,11 @@ RULES:
 - For empty results: never say "nothing found". Suggest an alternative.
 - For counts: state the number with context ("14 leads, 6 qualified").
 - Add useful commentary when obvious: "only 2 under budget", "all available this weekend".
-- If more than 10 items: show top 10, add "— want more?" at the end.
+- If more than 15 items: show top 15, add "— {N} total, want the rest?" at the end.
 - For confirmed writes: one line confirming what was done.
 - BANNED phrases: "Based on your request", "Here are the results", "I found", "As requested",
   "I have successfully", "The operation was successful", "Certainly", "Of course".
-- Max 300 words. Be tight.
+- CRITICAL: Always write complete sentences and complete lists. Never stop mid-sentence or mid-list.
 """
 
 _model = None
@@ -42,7 +42,7 @@ def _get_model() -> ChatGoogleGenerativeAI:
             model=GEMINI_MODEL,
             google_api_key=GEMINI_API_KEY,
             temperature=0.4,
-            max_output_tokens=600,
+            max_output_tokens=2048,
         )
     return _model
 
