@@ -4,6 +4,7 @@ Uses with_structured_output() so Pydantic validates the response directly.
 No manual JSON parsing, no StructuredOutputParser overhead.
 """
 
+import asyncio
 import logging
 import time
 from pathlib import Path
@@ -98,14 +99,27 @@ async def invoke(context_block: str) -> ARIAResponse:
         HumanMessage(content=context_block),
     ]
 
-    try:
-        response: ARIAResponse = await structured_model.ainvoke(messages)
-        logger.info(
-            "ARIA response: intent=%s action=%s awaiting=%s",
-            response.intent, response.action_type, response.awaiting_confirmation,
-        )
-        return response
+    last_err = None
+    for attempt in range(3):
+        try:
+            response: ARIAResponse = await structured_model.ainvoke(messages)
+            logger.info(
+                "ARIA response: intent=%s action=%s awaiting=%s",
+                response.intent, response.action_type, response.awaiting_confirmation,
+            )
+            return response
 
-    except Exception as e:
-        logger.error("ARIA chain failed: %s", e, exc_info=True)
-        return fallback_response(f"[ERR] {type(e).__name__}: {str(e)[:180]}")
+        except Exception as e:
+            last_err = e
+            err_str = str(e)
+            if "429" in err_str or "ResourceExhausted" in err_str or "quota" in err_str.lower():
+                wait = 5 * (attempt + 1)
+                logger.warning("Rate limited (429) — retrying in %ds (attempt %d/3)", wait, attempt + 1)
+                await asyncio.sleep(wait)
+                continue
+            # Non-rate-limit error — fail immediately
+            logger.error("ARIA chain failed: %s", e, exc_info=True)
+            return fallback_response(f"[ERR] {type(e).__name__}: {str(e)[:180]}")
+
+    logger.error("ARIA chain failed after retries: %s", last_err)
+    return fallback_response("Rate limit hit — please try again in a moment.")
