@@ -4,6 +4,7 @@ LangChain's with_structured_output() validates and parses the model's JSON
 directly into this model. No manual parsing needed.
 """
 
+import json
 from typing import Literal, Optional, Union
 from pydantic import BaseModel, Field, field_validator
 
@@ -30,6 +31,28 @@ class Entities(BaseModel):
     ]] = Field(default=None)
     filters: list[Filter] = Field(default_factory=list)
     values_to_set: dict = Field(default_factory=dict)
+
+    @field_validator("values_to_set", mode="before")
+    @classmethod
+    def coerce_values_to_set(cls, v):
+        if isinstance(v, str):
+            try:
+                result = json.loads(v) if v.strip() else {}
+                return result if isinstance(result, dict) else {}
+            except (json.JSONDecodeError, ValueError):
+                return {}
+        return v or {}
+
+    @field_validator("filters", mode="before")
+    @classmethod
+    def coerce_filters(cls, v):
+        if isinstance(v, str):
+            try:
+                result = json.loads(v) if v.strip() else []
+                return result if isinstance(result, list) else []
+            except (json.JSONDecodeError, ValueError):
+                return []
+        return v or []
 
 
 class ARIAResponse(BaseModel):

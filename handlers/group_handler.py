@@ -26,6 +26,18 @@ from monday import result_formatter
 logger = logging.getLogger(__name__)
 
 
+async def _send(context, chat_id: int, text: str, reply_to_message_id: int = None) -> None:
+    """Send with Markdown, fall back to plain text if parse fails."""
+    kwargs = {"chat_id": chat_id, "text": text, "parse_mode": "Markdown"}
+    if reply_to_message_id:
+        kwargs["reply_to_message_id"] = reply_to_message_id
+    try:
+        await context.bot.send_message(**kwargs)
+    except Exception:
+        kwargs.pop("parse_mode")
+        await context.bot.send_message(**kwargs)
+
+
 async def handle_group_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """MessageHandler callback for all group messages."""
     message = update.effective_message
@@ -59,11 +71,7 @@ async def handle_group_message(update: Update, context: ContextTypes.DEFAULT_TYP
             return
         elif confirmation.is_cancellation(text):
             confirmation.clear(chat_id, user_id)
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text="Got it — cancelled.",
-                reply_to_message_id=message.message_id,
-            )
+            await _send(context, chat_id, "Got it — cancelled.", message.message_id)
             return
         # Not a clear yes/no → fall through to re-process normally
 
@@ -84,23 +92,12 @@ async def handle_group_message(update: Update, context: ContextTypes.DEFAULT_TYP
     if response.awaiting_confirmation:
         confirmation.save(chat_id, user_id, response)
         confirm_msg = response.message or _build_confirm_prompt(response)
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text=confirm_msg,
-            parse_mode="Markdown",
-            reply_to_message_id=message.message_id,
-        )
+        await _send(context, chat_id, confirm_msg, message.message_id)
         return
 
     # ── 6. No data needed (greeting/chitchat/clarify) ─────────
     if not response.needs_data:
-        reply = response.message or "Got it."
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text=reply,
-            parse_mode="Markdown",
-            reply_to_message_id=message.message_id,
-        )
+        await _send(context, chat_id, response.message or "Got it.", message.message_id)
         return
 
     # ── 7. Execute Monday.com queries ─────────────────────────
@@ -125,13 +122,7 @@ async def _execute_and_reply(
 
     results = await monday_client.execute_queries(queries)
     text = result_formatter.format_results(results, response)
-
-    await context.bot.send_message(
-        chat_id=chat_id,
-        text=text,
-        parse_mode="Markdown",
-        reply_to_message_id=reply_to_id,
-    )
+    await _send(context, chat_id, text, reply_to_id)
 
 
 async def _execute_pending_write(
@@ -153,13 +144,7 @@ async def _execute_pending_write(
 
     results = await monday_client.execute_queries(queries)
     text = result_formatter.format_results(results, pending_response)
-
-    await context.bot.send_message(
-        chat_id=chat_id,
-        text=text,
-        parse_mode="Markdown",
-        reply_to_message_id=reply_to_id,
-    )
+    await _send(context, chat_id, text, reply_to_id)
 
 
 # ── Helpers ───────────────────────────────────────────────────
