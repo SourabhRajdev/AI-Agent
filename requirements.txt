@@ -1,6 +1,6 @@
 python-telegram-bot==20.7
 langchain==0.3.25
 langchain-google-genai==2.1.4
-pydantic==2.7.0
+pydantic>=2.7.4
 aiohttp==3.9.5
 python-dotenv==1.0.1
