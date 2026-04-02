@@ -109,11 +109,10 @@ async def resolve_item_id_placeholder(
 def _extract_first_item_id(results: list[dict]) -> str | None:
     """Walk the result tree to find the first item ID."""
     for result in results:
-        data = result.get("data", {})
-        for board_data in data.values():
-            if isinstance(board_data, dict):
-                items_page = board_data.get("items_page", {})
-                items = items_page.get("items", [])
+        boards = result.get("data", {}).get("boards", [])
+        for board in boards:
+            if isinstance(board, dict):
+                items = board.get("items_page", {}).get("items", [])
                 if items:
                     return items[0]["id"]
     return None

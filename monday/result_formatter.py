@@ -64,10 +64,10 @@ def _extract_items(results: list[dict]) -> list[dict]:
     for result in results:
         if "error" in result:
             continue
-        data = result.get("data", {})
-        for board_data in data.values():
-            if isinstance(board_data, dict):
-                items_page = board_data.get("items_page", {})
+        boards = result.get("data", {}).get("boards", [])
+        for board in boards:
+            if isinstance(board, dict):
+                items_page = board.get("items_page", {})
                 items.extend(items_page.get("items", []))
     return items
 
