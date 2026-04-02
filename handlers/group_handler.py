@@ -20,6 +20,7 @@ from core import group_context as gc_store
 from core import confirmation
 from core import context_builder
 from core import aria_chain
+from core import response_writer
 from monday import client as monday_client
 from monday import result_formatter
 
@@ -79,6 +80,7 @@ async def handle_group_message(update: Update, context: ContextTypes.DEFAULT_TYP
     await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
 
     invoker = group_ctx.get_invoker(message)
+    direct_request = context_builder.strip_mention(text, bot_username)
     context_block = context_builder.build(
         group_context=group_ctx,
         invoking_message_text=text,
@@ -104,16 +106,17 @@ async def handle_group_message(update: Update, context: ContextTypes.DEFAULT_TYP
     if not response.queries:
         await _send(context, chat_id, response.message or "Got it.", message.message_id)
         return
-    await _execute_and_reply(response, chat_id, message.message_id, context)
+    await _execute_and_reply(response, direct_request, chat_id, message.message_id, context)
 
 
 async def _execute_and_reply(
     response,
+    original_request: str,
     chat_id: int,
     reply_to_id: int,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
-    """Run Monday queries and send formatted result."""
+    """Run Monday queries, rewrite results as natural language, send."""
     queries = monday_client.inject_all_board_ids(response.queries)
 
     # 2-step write resolution for ITEM_ID_PLACEHOLDER
@@ -124,8 +127,9 @@ async def _execute_and_reply(
         )
 
     results = await monday_client.execute_queries(queries)
-    text = result_formatter.format_results(results, response)
-    await _send(context, chat_id, text, reply_to_id)
+    raw_text = result_formatter.format_results(results, response)
+    reply = await response_writer.rewrite(raw_text, original_request, response.intent)
+    await _send(context, chat_id, reply, reply_to_id)
 
 
 async def _execute_pending_write(

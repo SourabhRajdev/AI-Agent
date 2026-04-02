@@ -36,7 +36,7 @@ def build(
         A formatted string ready to be sent as the HumanMessage content.
     """
     transcript = group_context.get_transcript(limit=GROUP_CONTEXT_WINDOW)
-    direct_request = _strip_mention(invoking_message_text, bot_username)
+    direct_request = strip_mention(invoking_message_text, bot_username)
 
     return (
         f"[GROUP CONTEXT — Last {GROUP_CONTEXT_WINDOW} messages, {group_context.chat_title}]\n"
@@ -56,7 +56,7 @@ def build_private(message_text: str, username: str) -> str:
     )
 
 
-def _strip_mention(text: str, bot_username: str) -> str:
+def strip_mention(text: str, bot_username: str) -> str:
     """
     Remove the @botusername from the message to get the actual request.
     '@aria find available DJs' → 'find available DJs'

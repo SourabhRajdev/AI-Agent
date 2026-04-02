@@ -90,6 +90,7 @@ async def handle_private_message(update: Update, context) -> None:
     from core import aria_chain
     from core import context_builder
     from core import confirmation as conf_store
+    from core import response_writer
     from monday import client as monday_client
     from monday import result_formatter
     from telegram.constants import ChatAction
@@ -145,7 +146,8 @@ async def handle_private_message(update: Update, context) -> None:
             queries, board_id, response.entities.person_name
         )
     results = await monday_client.execute_queries(queries)
-    reply_text = result_formatter.format_results(results, response)
+    raw_text = result_formatter.format_results(results, response)
+    reply_text = await response_writer.rewrite(raw_text, text, response.intent)
     await _safe_reply(message, reply_text)
 
 
