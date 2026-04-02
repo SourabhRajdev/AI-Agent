@@ -107,5 +107,5 @@ async def invoke(context_block: str) -> ARIAResponse:
         return response
 
     except Exception as e:
-        logger.error("ARIA chain failed: %s", e)
-        return fallback_response()
+        logger.error("ARIA chain failed: %s", e, exc_info=True)
+        return fallback_response(f"[DEBUG] {type(e).__name__}: {e}")
