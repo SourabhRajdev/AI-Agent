@@ -8,6 +8,7 @@ import re
 from typing import Any
 
 from core.output_schema import ARIAResponse, Entities, Filter
+from monday.schema_loader import get_column_map
 
 logger = logging.getLogger(__name__)
 
@@ -46,8 +47,9 @@ def format_results(
         return _empty_result_message(response)
 
     entities = response.entities
-    items = _apply_filters(items, entities.filters, entities.person_name)
-    items = _apply_sort(items, entities.sort_by)
+    board = entities.board or ""
+    items = _apply_filters(items, entities.filters, entities.person_name, board)
+    items = _apply_sort(items, entities.sort_by, board)
     items = _apply_limit(items, entities.limit)
 
     if response.intent == "count":
@@ -73,7 +75,7 @@ def _extract_items(results: list[dict]) -> list[dict]:
     return items
 
 
-def _apply_filters(items: list[dict], filters: list[Filter], person_name: str) -> list[dict]:
+def _apply_filters(items: list[dict], filters: list[Filter], person_name: str, board: str = "") -> list[dict]:
     """Apply attribute filters and person_name search locally."""
     result = items
 
@@ -88,14 +90,14 @@ def _apply_filters(items: list[dict], filters: list[Filter], person_name: str) -
 
     # Attribute filters
     for f in filters:
-        result = [item for item in result if _matches_filter(item, f)]
+        result = [item for item in result if _matches_filter(item, f, board)]
 
     return result
 
 
-def _matches_filter(item: dict, f: Filter) -> bool:
+def _matches_filter(item: dict, f: Filter, board: str = "") -> bool:
     """Check if an item matches a single filter."""
-    value = _get_field_value(item, f.field)
+    value = _get_field_value(item, f.field, board)
     if value is None:
         return False
 
@@ -125,21 +127,21 @@ def _matches_filter(item: dict, f: Filter) -> bool:
     return False
 
 
-def _apply_sort(items: list[dict], sort_by: str | None) -> list[dict]:
+def _apply_sort(items: list[dict], sort_by: str | None, board: str = "") -> list[dict]:
     if not sort_by:
         return items
 
     if sort_by == "created_at_desc":
         return sorted(items, key=lambda x: x.get("created_at", ""), reverse=True)
     elif sort_by == "pricing_asc":
-        return sorted(items, key=lambda x: _numeric_field(x, "pricing"))
+        return sorted(items, key=lambda x: _numeric_field(x, "pricing", board))
     elif sort_by == "pricing_desc":
-        return sorted(items, key=lambda x: _numeric_field(x, "pricing"), reverse=True)
+        return sorted(items, key=lambda x: _numeric_field(x, "pricing", board), reverse=True)
     elif sort_by == "experience_desc":
-        return sorted(items, key=lambda x: _numeric_field(x, "experience"), reverse=True)
+        return sorted(items, key=lambda x: _numeric_field(x, "experience", board), reverse=True)
     elif sort_by == "rating_desc":
         rating_order = {"Top Rated": 3, "Verified": 2, "New": 1}
-        return sorted(items, key=lambda x: rating_order.get(_get_field_value(x, "rating") or "", 0), reverse=True)
+        return sorted(items, key=lambda x: rating_order.get(_get_field_value(x, "rating", board) or "", 0), reverse=True)
     return items
 
 
@@ -182,29 +184,49 @@ def _column_label(col_id: str, col_title: str) -> str:
     return ""
 
 
-def _get_field_value(item: dict, field: str) -> Any:
+def _get_field_value(item: dict, field: str, board: str = "") -> Any:
     """
-    Find a column value by matching field name against column IDs and titles.
+    Find a column value for `field` in an item's column_values.
 
-    Matching rules (in priority order):
-      1. Exact match on col_id or col_title
-      2. field_lower is substring of col_id or col_title
+    Lookup priority:
+      1. Exact column ID from schema_loader column_map (semantic → real ID)
+      2. Exact match on col_id or col_title (case-insensitive)
       3. field with underscores→spaces matches col_title ("art_form" → "art form")
+      4. Substring match on col_id or col_title
 
-    Returns only col["text"] — never col["value"] which is a raw JSON blob
-    for status/dropdown columns and would corrupt filtering.
+    Returns only col["text"] — never col["value"] which is a raw JSON blob.
     """
     field_lower = field.lower()
     field_spaced = field_lower.replace("_", " ")   # "art_form" → "art form"
 
-    for col in item.get("column_values", []):
+    # Step 1: resolve exact column ID from schema column_map
+    exact_col_id: str | None = None
+    if board:
+        column_map = get_column_map(board)
+        exact_col_id = column_map.get(field_lower)
+
+    col_values = item.get("column_values", [])
+
+    logger.debug("_get_field_value: field=%s board=%s exact_col_id=%s", field, board, exact_col_id)
+
+    # Step 2: if we have an exact ID, use it directly
+    if exact_col_id:
+        for col in col_values:
+            if (col.get("id") or "").lower() == exact_col_id.lower():
+                text = (col.get("text") or "").strip()
+                return text if text else None
+
+    # Step 3: fallback — exact then spaced then substring match
+    for col in col_values:
         col_id    = (col.get("id")    or "").lower()
         col_title = (col.get("title") or "").lower()
 
         matched = (
-            field_lower in col_id
+            col_id    == field_lower
+            or col_title == field_lower
+            or col_title == field_spaced
+            or field_lower in col_id
             or field_lower in col_title
-            or field_spaced == col_title          # "art form" == "art form"  ✓
             or field_spaced in col_id
         )
         if matched:
@@ -214,8 +236,8 @@ def _get_field_value(item: dict, field: str) -> Any:
     return None
 
 
-def _numeric_field(item: dict, field: str) -> float:
-    val = _get_field_value(item, field)
+def _numeric_field(item: dict, field: str, board: str = "") -> float:
+    val = _get_field_value(item, field, board)
     try:
         return float(val) if val else 0.0
     except (ValueError, TypeError):
