@@ -63,7 +63,11 @@ def validate_write(values_to_set: dict, board: str) -> list[str]:
             continue
 
         col_type = column_types.get(col_id, "unknown")
-        str_val = str(value).strip()
+
+        if isinstance(value, dict) and "label" in value:
+            str_val = str(value["label"]).strip()
+        else:
+            str_val = str(value).strip()
 
         # ── 2. Type enforcement ────────────────────────────────
         if col_type in _NUMERIC_TYPES:

@@ -25,6 +25,7 @@ from monday import client as monday_client
 from monday import result_formatter
 from monday.schema_loader import get_column_map
 from monday.write_validator import validate_write
+from config import ALLOWED_CHAT_IDS
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +53,11 @@ async def handle_group_message(update: Update, context: ContextTypes.DEFAULT_TYP
 
     chat_id = chat.id
     user_id = user.id
+
+    if ALLOWED_CHAT_IDS and chat_id not in ALLOWED_CHAT_IDS:
+        logger.warning(f"Unauthorized chat_id: {chat_id}. Ignoring message.")
+        return
+
     text = message.text or message.caption or ""
 
     # ── 1. Always store message in group context ───────────────
@@ -60,7 +66,10 @@ async def handle_group_message(update: Update, context: ContextTypes.DEFAULT_TYP
 
     # ── 2. Detect invocation ───────────────────────────────────
     bot_username = context.bot.username  # e.g. "ariacrm_bot"
-    invoked = _is_invoked(message, bot_username)
+
+    # In private chats, all messages are an invocation.
+    is_private = chat.type == "private"
+    invoked = True if is_private else _is_invoked(message, bot_username)
 
     if not invoked:
         return  # passive — store only, no response
@@ -83,12 +92,16 @@ async def handle_group_message(update: Update, context: ContextTypes.DEFAULT_TYP
 
     invoker = group_ctx.get_invoker(message)
     direct_request = context_builder.strip_mention(text, bot_username)
-    context_block = context_builder.build(
-        group_context=group_ctx,
-        invoking_message_text=text,
-        invoker=invoker,
-        bot_username=bot_username,
-    )
+
+    if is_private:
+        context_block = context_builder.build_private(text, invoker["username"])
+    else:
+        context_block = context_builder.build(
+            group_context=group_ctx,
+            invoking_message_text=text,
+            invoker=invoker,
+            bot_username=bot_username,
+        )
 
     response = await aria_chain.invoke(context_block)
 
