@@ -30,16 +30,16 @@ GROUP_CONTEXT_WINDOW = 20         # messages injected into model context
 CONFIRMATION_TTL_SECONDS = 120    # pending write expires after 2 minutes
 
 # ── Access Control ────────────────────────────────────────────
-ALLOWED_CHAT_IDS_STR = os.environ.get("ALLOWED_CHAT_IDS", "")
-ALLOWED_CHAT_IDS = set()
-if ALLOWED_CHAT_IDS_STR:
-    for x in ALLOWED_CHAT_IDS_STR.split(","):
-        cleaned = x.strip().strip("'\"")
-        if cleaned:
-            try:
-                ALLOWED_CHAT_IDS.add(int(cleaned))
-            except ValueError:
-                pass
+# Accept either ALLOWED_CHAT_IDS or TELEGRAM_ALLOWED_CHAT_IDS
+_raw_ids = os.environ.get("ALLOWED_CHAT_IDS") or os.environ.get("TELEGRAM_ALLOWED_CHAT_IDS") or ""
+ALLOWED_CHAT_IDS: set[int] = set()
+for _x in _raw_ids.split(","):
+    _x = _x.strip().strip('"').strip("'")
+    if _x:
+        try:
+            ALLOWED_CHAT_IDS.add(int(_x))
+        except ValueError:
+            pass  # skip malformed entries, never crash on startup
 
 # ── Rate Limiting ─────────────────────────────────────────────
 RATE_LIMIT_MESSAGES = 10
