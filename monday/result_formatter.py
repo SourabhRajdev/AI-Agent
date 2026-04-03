@@ -4,6 +4,7 @@ Applies limit, sort_by, and filters from the agent's entities.
 """
 
 import logging
+import re
 from typing import Any
 
 from core.output_schema import ARIAResponse, Entities, Filter
@@ -104,12 +105,10 @@ def _matches_filter(item: dict, f: Filter) -> bool:
     if f.operator == "equals":
         # Normalize Monday.com dropdown labels that may have parenthetical subtypes
         # e.g. "Music - DJ (Club & Events DJ)" should match filter "Music - DJ"
-        import re as _re
-        val_normalized = _re.split(r'\s*\(', val_str)[0].strip()
+        val_normalized = re.split(r'\s*\(', val_str)[0].strip()
         return val_normalized == filter_val or val_str == filter_val
     elif f.operator == "not_equals":
-        import re as _re
-        val_normalized = _re.split(r'\s*\(', val_str)[0].strip()
+        val_normalized = re.split(r'\s*\(', val_str)[0].strip()
         return val_normalized != filter_val and val_str != filter_val
     elif f.operator == "contains":
         return filter_val in val_str
@@ -184,13 +183,34 @@ def _column_label(col_id: str, col_title: str) -> str:
 
 
 def _get_field_value(item: dict, field: str) -> Any:
-    """Find a column value by matching field name against column IDs and titles."""
+    """
+    Find a column value by matching field name against column IDs and titles.
+
+    Matching rules (in priority order):
+      1. Exact match on col_id or col_title
+      2. field_lower is substring of col_id or col_title
+      3. field with underscores→spaces matches col_title ("art_form" → "art form")
+
+    Returns only col["text"] — never col["value"] which is a raw JSON blob
+    for status/dropdown columns and would corrupt filtering.
+    """
     field_lower = field.lower()
+    field_spaced = field_lower.replace("_", " ")   # "art_form" → "art form"
+
     for col in item.get("column_values", []):
-        col_id = col.get("id", "").lower()
-        col_title = col.get("title", "").lower()
-        if field_lower in col_id or field_lower in col_title:
-            return col.get("text") or col.get("value")
+        col_id    = (col.get("id")    or "").lower()
+        col_title = (col.get("title") or "").lower()
+
+        matched = (
+            field_lower in col_id
+            or field_lower in col_title
+            or field_spaced == col_title          # "art form" == "art form"  ✓
+            or field_spaced in col_id
+        )
+        if matched:
+            text = (col.get("text") or "").strip()
+            return text if text else None
+
     return None
 
 
@@ -214,13 +234,17 @@ def _board_label(board: str | None) -> str:
 
 
 def _empty_result_message(response: ARIAResponse) -> str:
+    """
+    Returns a natural-language empty result message.
+    Never exposes raw filter field names or values — those are internal and
+    would corrupt the group context buffer if stored.
+    """
     entities = response.entities
     board = _board_label(entities.board)
-    filters_desc = ", ".join(f"{f.field}={f.value}" for f in entities.filters) if entities.filters else ""
     person = entities.person_name
 
     if person:
         return f"No '{person}' found in {board}. Check the spelling or try a different board?"
-    if filters_desc:
-        return f"No {board} match: {filters_desc}. Want to broaden the search?"
+    if entities.filters or entities.sort_by:
+        return f"No {board} match your current search criteria. Want to broaden the search?"
     return f"No {board} found. The board might be empty."

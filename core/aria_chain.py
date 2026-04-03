@@ -103,6 +103,9 @@ async def invoke(context_block: str) -> ARIAResponse:
     for attempt in range(3):
         try:
             response: ARIAResponse = await structured_model.ainvoke(messages)
+            if response is None:
+                logger.error("structured_model returned None (attempt %d)", attempt + 1)
+                return fallback_response("Couldn't process that. Please try again.")
             logger.info(
                 "ARIA response: intent=%s action=%s awaiting=%s",
                 response.intent, response.action_type, response.awaiting_confirmation,
