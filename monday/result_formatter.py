@@ -258,6 +258,49 @@ def _board_label(board: str | None) -> str:
     return {"sales": "leads/clients", "artists": "artists", "staff": "staff members"}.get(board or "", "records")
 
 
+def format_write_verification(verify_results: list[dict], intent: str) -> str:
+    """
+    Format a read-back result as a write confirmation.
+    Shows what actually got saved in Monday.com — not what the LLM assumed.
+    """
+    items = _extract_direct_items(verify_results)
+    if not items:
+        return "Done."
+
+    item = items[0]
+    name = item.get("name", "Item")
+    col_values = item.get("column_values", [])
+
+    parts = []
+    for col in col_values:
+        text = (col.get("text") or "").strip()
+        if not text:
+            continue
+        label = _column_label(col.get("id") or "", col.get("title") or "")
+        if label:
+            parts.append(f"   {label}: {text}")
+
+    action = {
+        "create_item": "Created",
+        "update_item": "Updated",
+        "delete_item": "Deleted",
+    }.get(intent, "Done")
+
+    lines = [f"*{action}: {name}*"]
+    lines.extend(parts[:6])
+    return "\n".join(lines)
+
+
+def _extract_direct_items(results: list[dict]) -> list[dict]:
+    """Extract items from an items(ids:[...]) direct query result."""
+    items = []
+    for result in results:
+        if "error" in result:
+            continue
+        items.extend(result.get("data", {}).get("items", []))
+    return items
+
+
 def _extract_api_errors(results: list[dict]) -> list[str]:
     """Collect Monday.com API error messages from all results."""
     messages = []

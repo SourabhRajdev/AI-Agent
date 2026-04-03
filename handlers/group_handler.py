@@ -151,7 +151,18 @@ async def _execute_and_reply(
         )
 
     results = await monday_client.execute_queries(queries)
-    raw_text = result_formatter.format_results(results, response)
+
+    # ── VERIFY ─────────────────────────────────────────────────
+    if response.action_type == "write":
+        verify_results = await monday_client.verify_write_result(results)
+        raw_text = (
+            result_formatter.format_write_verification(verify_results, response.intent)
+            if verify_results
+            else result_formatter.format_results(results, response)
+        )
+    else:
+        raw_text = result_formatter.format_results(results, response)
+
     reply = await response_writer.rewrite(raw_text, original_request, response.intent)
     await _send(context, chat_id, reply, reply_to_id)
     if group_ctx:
@@ -176,7 +187,15 @@ async def _execute_pending_write(
         )
 
     results = await monday_client.execute_queries(queries)
-    text = result_formatter.format_results(results, pending_response)
+
+    # ── VERIFY ─────────────────────────────────────────────────
+    verify_results = await monday_client.verify_write_result(results)
+    text = (
+        result_formatter.format_write_verification(verify_results, pending_response.intent)
+        if verify_results
+        else result_formatter.format_results(results, pending_response)
+    )
+
     await _send(context, chat_id, text, reply_to_id)
     ctx = gc_store.get(chat_id)
     if ctx:

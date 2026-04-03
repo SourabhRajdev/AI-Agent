@@ -119,6 +119,54 @@ def _extract_first_item_id(results: list[dict]) -> str | None:
     return None
 
 
+# ── Write verification ────────────────────────────────────────
+
+_WRITE_MUTATION_KEYS = (
+    "create_item",
+    "change_multiple_column_values",
+    "change_column_value",
+    "change_simple_column_value",
+)
+
+
+def _extract_written_item_id(results: list[dict]) -> str | None:
+    """Walk mutation results to find the written item's ID."""
+    for result in results:
+        data = result.get("data", {})
+        for key in _WRITE_MUTATION_KEYS:
+            item = data.get(key)
+            if item and isinstance(item, dict):
+                item_id = item.get("id")
+                if item_id:
+                    return str(item_id)
+    return None
+
+
+async def verify_write_result(mutation_results: list[dict]) -> list[dict]:
+    """
+    After a write mutation, read back the item to confirm what actually got saved.
+    Returns the items(ids:[...]) query result, or [] if no item ID was found.
+    """
+    item_id = _extract_written_item_id(mutation_results)
+    if not item_id:
+        return []
+
+    query = """
+    query {
+      items(ids: [%s]) {
+        id
+        name
+        column_values { id title text }
+      }
+    }
+    """ % item_id
+
+    logger.info("Verifying write — reading back item %s", item_id)
+    async with aiohttp.ClientSession() as session:
+        result = await execute(query, session)
+    return [result]
+
+
 # ── Board ID resolver ─────────────────────────────────────────
 
 def get_board_id(board_name: str) -> int:
