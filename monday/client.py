@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 HEADERS = {
     "Authorization": MONDAY_API_KEY,
     "Content-Type": "application/json",
-    "API-Version": "2024-01",
+    "API-Version": "2025-04",
 }
 
 MAX_RETRIES = 3
@@ -38,9 +38,10 @@ async def execute(query: str, session: aiohttp.ClientSession) -> dict:
                 headers=HEADERS,
                 timeout=aiohttp.ClientTimeout(total=15),
             ) as resp:
-                if resp.status == 429:
+                if resp.status in (429, 423):
                     retry_after = float(resp.headers.get("Retry-After", RETRY_DELAY * attempt))
-                    logger.warning("Rate limited — waiting %.1fs (attempt %d)", retry_after, attempt)
+                    reason = "Rate limited" if resp.status == 429 else "Board locked"
+                    logger.warning("%s — waiting %.1fs (attempt %d)", reason, retry_after, attempt)
                     await asyncio.sleep(retry_after)
                     continue
 
@@ -137,4 +138,16 @@ def inject_board_ids(query: str, board: str) -> str:
 
 
 def inject_all_board_ids(queries: list[str]) -> list[str]:
-    return [inject_board_ids(q, "") for q in queries]
+    return [_ensure_items_page_limit(inject_board_ids(q, "")) for q in queries]
+
+
+def _ensure_items_page_limit(query: str, default_limit: int = 200) -> str:
+    """
+    If a query contains items_page without a limit argument, inject limit: N.
+    Prevents Monday.com's default of 25 items silently truncating results.
+    """
+    # items_page already has arguments — don't touch
+    if re.search(r'items_page\s*\(', query):
+        return query
+    # items_page with no parens — inject limit
+    return re.sub(r'\bitems_page\b', f'items_page(limit: {default_limit})', query)
