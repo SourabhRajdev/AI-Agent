@@ -102,9 +102,15 @@ def _matches_filter(item: dict, f: Filter) -> bool:
     filter_val = str(f.value).lower()
 
     if f.operator == "equals":
-        return val_str == filter_val
+        # Normalize Monday.com dropdown labels that may have parenthetical subtypes
+        # e.g. "Music - DJ (Club & Events DJ)" should match filter "Music - DJ"
+        import re as _re
+        val_normalized = _re.split(r'\s*\(', val_str)[0].strip()
+        return val_normalized == filter_val or val_str == filter_val
     elif f.operator == "not_equals":
-        return val_str != filter_val
+        import re as _re
+        val_normalized = _re.split(r'\s*\(', val_str)[0].strip()
+        return val_normalized != filter_val and val_str != filter_val
     elif f.operator == "contains":
         return filter_val in val_str
     elif f.operator in ("less_than", "greater_than", "less_equal", "greater_equal"):
