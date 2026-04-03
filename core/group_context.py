@@ -89,6 +89,18 @@ class GroupContext:
             lines.append(f"[{msg.username}]: {msg.text}")
         return "\n".join(lines)
 
+    def add_bot_response(self, text: str) -> None:
+        """Store ARIA's own reply so it appears in future transcripts."""
+        stored = StoredMessage(
+            message_id=-1,
+            user_id=0,
+            username="ARIA",
+            display_name="ARIA",
+            text=text[:500],  # cap length to keep context sane
+            timestamp=datetime.now(),
+        )
+        self.messages.append(stored)
+
     def get_invoker(self, telegram_message) -> dict:
         """
         Returns structured info about the user who invoked ARIA.

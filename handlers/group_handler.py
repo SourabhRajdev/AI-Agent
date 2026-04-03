@@ -95,18 +95,23 @@ async def handle_group_message(update: Update, context: ContextTypes.DEFAULT_TYP
         confirmation.save(chat_id, user_id, response)
         confirm_msg = response.message or _build_confirm_prompt(response)
         await _send(context, chat_id, confirm_msg, message.message_id)
+        group_ctx.add_bot_response(confirm_msg)
         return
 
     # ── 6. No data needed (greeting/chitchat/clarify) ─────────
     if not response.needs_data:
-        await _send(context, chat_id, response.message or "Got it.", message.message_id)
+        reply = response.message or "Got it."
+        await _send(context, chat_id, reply, message.message_id)
+        group_ctx.add_bot_response(reply)
         return
 
     # ── 7. Execute Monday.com queries ─────────────────────────
     if not response.queries:
-        await _send(context, chat_id, response.message or "Got it.", message.message_id)
+        reply = response.message or "Got it."
+        await _send(context, chat_id, reply, message.message_id)
+        group_ctx.add_bot_response(reply)
         return
-    await _execute_and_reply(response, direct_request, chat_id, message.message_id, context)
+    await _execute_and_reply(response, direct_request, chat_id, message.message_id, context, group_ctx)
 
 
 async def _execute_and_reply(
@@ -115,6 +120,7 @@ async def _execute_and_reply(
     chat_id: int,
     reply_to_id: int,
     context: ContextTypes.DEFAULT_TYPE,
+    group_ctx=None,
 ) -> None:
     """Run Monday queries, rewrite results as natural language, send."""
     queries = monday_client.inject_all_board_ids(response.queries)
@@ -130,6 +136,8 @@ async def _execute_and_reply(
     raw_text = result_formatter.format_results(results, response)
     reply = await response_writer.rewrite(raw_text, original_request, response.intent)
     await _send(context, chat_id, reply, reply_to_id)
+    if group_ctx:
+        group_ctx.add_bot_response(reply)
 
 
 async def _execute_pending_write(
@@ -152,6 +160,9 @@ async def _execute_pending_write(
     results = await monday_client.execute_queries(queries)
     text = result_formatter.format_results(results, pending_response)
     await _send(context, chat_id, text, reply_to_id)
+    ctx = gc_store.get(chat_id)
+    if ctx:
+        ctx.add_bot_response(text)
 
 
 # ── Helpers ───────────────────────────────────────────────────
