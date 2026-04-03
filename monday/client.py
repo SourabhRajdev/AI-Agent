@@ -103,7 +103,7 @@ async def resolve_item_id_placeholder(
     logger.info("Resolved ITEM_ID_PLACEHOLDER → %s for '%s'", item_id, person_name)
 
     resolved = [q.replace("ITEM_ID_PLACEHOLDER", str(item_id)) for q in mutation_queries]
-    return search_queries + resolved
+    return resolved
 
 
 def _extract_first_item_id(results: list[dict]) -> str | None:
