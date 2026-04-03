@@ -108,13 +108,15 @@ def _matches_filter(item: dict, f: Filter, board: str = "") -> bool:
     filter_val = str(f.value).lower()
 
     if f.operator == "equals":
-        # Normalize Monday.com dropdown labels that may have parenthetical subtypes
-        # e.g. "Music - DJ (Club & Events DJ)" should match filter "Music - DJ"
-        val_normalized = re.split(r'\s*\(', val_str)[0].strip()
-        return val_normalized == filter_val or val_str == filter_val
+        # Substring match for string categories/dropdowns (e.g. "dj" inside "music - dj (club & events dj)")
+        # If it's pure numeric string, exact match to prevent "50" matching "5000"
+        if filter_val.replace('.', '', 1).isdigit():
+            return val_str == filter_val
+        return filter_val in val_str
     elif f.operator == "not_equals":
-        val_normalized = re.split(r'\s*\(', val_str)[0].strip()
-        return val_normalized != filter_val and val_str != filter_val
+        if filter_val.replace('.', '', 1).isdigit():
+            return val_str != filter_val
+        return filter_val not in val_str
     elif f.operator == "contains":
         return filter_val in val_str
     elif f.operator in ("less_than", "greater_than", "less_equal", "greater_equal"):
