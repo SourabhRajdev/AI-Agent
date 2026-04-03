@@ -31,9 +31,15 @@ CONFIRMATION_TTL_SECONDS = 120    # pending write expires after 2 minutes
 
 # ── Access Control ────────────────────────────────────────────
 ALLOWED_CHAT_IDS_STR = os.environ.get("ALLOWED_CHAT_IDS", "")
-ALLOWED_CHAT_IDS = {
-    int(x.strip()) for x in ALLOWED_CHAT_IDS_STR.split(",") if x.strip()
-} if ALLOWED_CHAT_IDS_STR else set()
+ALLOWED_CHAT_IDS = set()
+if ALLOWED_CHAT_IDS_STR:
+    for x in ALLOWED_CHAT_IDS_STR.split(","):
+        cleaned = x.strip().strip("'\"")
+        if cleaned:
+            try:
+                ALLOWED_CHAT_IDS.add(int(cleaned))
+            except ValueError:
+                pass
 
 # ── Rate Limiting ─────────────────────────────────────────────
 RATE_LIMIT_MESSAGES = 10
