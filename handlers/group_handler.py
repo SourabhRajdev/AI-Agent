@@ -24,6 +24,7 @@ from core import response_writer
 from monday import client as monday_client
 from monday import result_formatter
 from monday.schema_loader import get_column_map
+from monday.write_validator import validate_write
 
 logger = logging.getLogger(__name__)
 
@@ -124,6 +125,17 @@ async def _execute_and_reply(
     group_ctx=None,
 ) -> None:
     """Run Monday queries, rewrite results as natural language, send."""
+
+    # ── Pre-execution write validation ─────────────────────────
+    if response.action_type == "write" and response.entities.values_to_set:
+        val_errors = validate_write(response.entities.values_to_set, response.entities.board or "")
+        if val_errors:
+            error_msg = "Can't do that:\n" + "\n".join(f"• {e}" for e in val_errors)
+            await _send(context, chat_id, error_msg, reply_to_id)
+            if group_ctx:
+                group_ctx.add_bot_response(error_msg)
+            return
+
     queries = monday_client.inject_all_board_ids(response.queries)
 
     # Push numeric filters (pricing, experience, etc.) to Monday server-side

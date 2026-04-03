@@ -41,9 +41,12 @@ def format_results(
     Main entry point. Extracts items from Monday.com results,
     applies local filtering/sorting/limiting, and formats for Telegram.
     """
+    api_errors = _extract_api_errors(raw_results)
     items = _extract_items(raw_results)
 
     if not items:
+        if api_errors:
+            return _format_api_error(api_errors[0])
         return _empty_result_message(response)
 
     entities = response.entities
@@ -253,6 +256,43 @@ def _search_column_values(item: dict, query: str) -> bool:
 
 def _board_label(board: str | None) -> str:
     return {"sales": "leads/clients", "artists": "artists", "staff": "staff members"}.get(board or "", "records")
+
+
+def _extract_api_errors(results: list[dict]) -> list[str]:
+    """Collect Monday.com API error messages from all results."""
+    messages = []
+    for result in results:
+        err = result.get("error")
+        if not err:
+            continue
+        if isinstance(err, list):
+            for e in err:
+                msg = e.get("message", "") if isinstance(e, dict) else str(e)
+                if msg:
+                    messages.append(msg)
+        else:
+            messages.append(str(err))
+    return messages
+
+
+def _format_api_error(message: str) -> str:
+    """Convert a raw Monday.com error into a user-facing string."""
+    msg_lower = message.lower()
+    if "columnvalueexception" in msg_lower or "column value" in msg_lower:
+        return (
+            "Couldn't save — Monday.com rejected the value format. "
+            "Check the field value and try again."
+        )
+    if "invalidcolumnidexception" in msg_lower or ("column" in msg_lower and "not found" in msg_lower):
+        return "Couldn't save — one of the fields doesn't exist on this board."
+    if "invalidboardidexception" in msg_lower:
+        return "Couldn't find that board. The board ID may be wrong."
+    if "itemslimitationexception" in msg_lower:
+        return "Board is full — Monday.com boards have a 10,000 item limit."
+    if "unauthorized" in msg_lower or "permission" in msg_lower:
+        return "Access denied — the API key doesn't have permission for this action."
+    # Surface the raw message but trimmed
+    return f"Monday.com error: {message[:200]}"
 
 
 def _empty_result_message(response: ARIAResponse) -> str:
