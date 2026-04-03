@@ -23,6 +23,7 @@ from core import aria_chain
 from core import response_writer
 from monday import client as monday_client
 from monday import result_formatter
+from monday.schema_loader import get_column_map
 
 logger = logging.getLogger(__name__)
 
@@ -124,6 +125,11 @@ async def _execute_and_reply(
 ) -> None:
     """Run Monday queries, rewrite results as natural language, send."""
     queries = monday_client.inject_all_board_ids(response.queries)
+
+    # Push numeric filters (pricing, experience, etc.) to Monday server-side
+    if response.action_type == "read" and response.entities.filters:
+        column_map = get_column_map(response.entities.board or "")
+        queries = monday_client.inject_server_filters(queries, response.entities.filters, column_map)
 
     # 2-step write resolution for ITEM_ID_PLACEHOLDER
     if response.action_type == "write" and response.entities.person_name:

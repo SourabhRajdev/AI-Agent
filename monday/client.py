@@ -146,8 +146,64 @@ def _ensure_items_page_limit(query: str, default_limit: int = 200) -> str:
     If a query contains items_page without a limit argument, inject limit: N.
     Prevents Monday.com's default of 25 items silently truncating results.
     """
-    # items_page already has arguments — don't touch
     if re.search(r'items_page\s*\(', query):
         return query
-    # items_page with no parens — inject limit
     return re.sub(r'\bitems_page\b', f'items_page(limit: {default_limit})', query)
+
+
+# Operators that map cleanly to Monday.com's numeric comparators.
+# String/dropdown operators (equals, contains) are intentionally excluded —
+# they stay client-side to handle fuzzy label matching ("DJ" → "Music - DJ").
+_NUMERIC_OP_MAP = {
+    "less_than":    "lower_than",
+    "less_equal":   "lower_than",
+    "greater_than": "greater_than",
+    "greater_equal": "greater_than",
+}
+
+
+def inject_server_filters(queries: list[str], filters: list, column_map: dict) -> list[str]:
+    """
+    Inject numeric filters as server-side query_params into items_page.
+
+    Only numeric operators are pushed to the API — Monday.com handles these
+    reliably on its end.  String/dropdown filters (equals, contains) remain
+    client-side so fuzzy label normalization still applies.
+
+    Skips queries that already contain query_params (idempotent).
+    """
+    rules = []
+    for f in filters:
+        monday_op = _NUMERIC_OP_MAP.get(f.operator)
+        if not monday_op:
+            continue
+        col_id = column_map.get(f.field.lower())
+        if not col_id:
+            logger.debug("inject_server_filters: no column_id for field=%s", f.field)
+            continue
+        rules.append(
+            f'{{ column_id: "{col_id}", compare_value: ["{f.value}"], operator: {monday_op} }}'
+        )
+
+    if not rules:
+        return queries
+
+    rules_str = ", ".join(rules)
+    query_params = f'query_params: {{ rules: [{rules_str}], operator: and }}'
+
+    result = []
+    for q in queries:
+        if "query_params" in q:
+            result.append(q)
+            continue
+        # Replace items_page(limit: N) → items_page(limit: N, query_params: {...})
+        modified = re.sub(
+            r'items_page\(limit:\s*(\d+)\)',
+            lambda m: f'items_page(limit: {m.group(1)}, {query_params})',
+            q,
+        )
+        result.append(modified)
+        if modified != q:
+            logger.debug("inject_server_filters: injected %d rule(s) into query", len(rules))
+
+    return result
