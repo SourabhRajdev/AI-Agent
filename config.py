@@ -29,6 +29,12 @@ GROUP_CONTEXT_WINDOW = 20         # messages injected into model context
 # ── Confirmation ─────────────────────────────────────────────
 CONFIRMATION_TTL_SECONDS = 120    # pending write expires after 2 minutes
 
+# ── Access Control ────────────────────────────────────────────
+ALLOWED_CHAT_IDS_STR = os.environ.get("ALLOWED_CHAT_IDS", "")
+ALLOWED_CHAT_IDS = {
+    int(x.strip()) for x in ALLOWED_CHAT_IDS_STR.split(",") if x.strip()
+} if ALLOWED_CHAT_IDS_STR else set()
+
 # ── Rate Limiting ─────────────────────────────────────────────
 RATE_LIMIT_MESSAGES = 10
 RATE_LIMIT_WINDOW_SECONDS = 60

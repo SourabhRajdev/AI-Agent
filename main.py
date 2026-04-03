@@ -58,97 +58,15 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("clear", handle_clear))
     app.add_handler(CommandHandler("status", handle_status))
 
-    # All text messages in groups and supergroups
+    # All text messages (Groups, Supergroups, Private)
     app.add_handler(
         MessageHandler(
-            filters.TEXT & (filters.ChatType.GROUPS | filters.ChatType.SUPERGROUP),
+            filters.TEXT & ~filters.COMMAND,
             handle_group_message,
         )
     )
 
-    # Private chat messages (DMs) — also handled by group_handler logic
-    app.add_handler(
-        MessageHandler(
-            filters.TEXT & filters.ChatType.PRIVATE,
-            handle_private_message,
-        )
-    )
-
     return app
-
-
-async def _safe_reply(message, text: str) -> None:
-    """Reply with Markdown, fall back to plain text if parse fails."""
-    try:
-        await message.reply_text(text, parse_mode="Markdown")
-    except Exception:
-        await message.reply_text(text)
-
-
-async def handle_private_message(update: Update, context) -> None:
-    """For private DMs, use simpler single-turn flow."""
-    from core import aria_chain
-    from core import context_builder
-    from core import confirmation as conf_store
-    from core import response_writer
-    from monday import client as monday_client
-    from monday import result_formatter
-    from telegram.constants import ChatAction
-
-    message = update.effective_message
-    user = update.effective_user
-    chat_id = update.effective_chat.id
-    user_id = user.id
-    text = message.text or ""
-
-    # Check pending write
-    pending = conf_store.get(chat_id, user_id)
-    if pending:
-        if conf_store.is_confirmation(text):
-            conf_store.clear(chat_id, user_id)
-            await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
-            queries = monday_client.inject_all_board_ids(pending.queries)
-            if pending.entities.person_name:
-                from config import BOARD_IDS
-                board_id = BOARD_IDS.get(pending.entities.board or "sales", BOARD_IDS["sales"])
-                queries = await monday_client.resolve_item_id_placeholder(
-                    queries, board_id, pending.entities.person_name
-                )
-            results = await monday_client.execute_queries(queries)
-            reply_text = result_formatter.format_results(results, pending)
-            await _safe_reply(message, reply_text)
-            return
-        elif conf_store.is_cancellation(text):
-            conf_store.clear(chat_id, user_id)
-            await message.reply_text("Cancelled.")
-            return
-
-    await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
-
-    username = user.username or user.first_name or str(user_id)
-    context_block = context_builder.build_private(text, username)
-    response = await aria_chain.invoke(context_block)
-
-    if response.awaiting_confirmation:
-        conf_store.save(chat_id, user_id, response)
-        await _safe_reply(message, response.message or "Confirm this action? Reply *yes* or *no*.")
-        return
-
-    if not response.needs_data or not response.queries:
-        await _safe_reply(message, response.message or "Got it.")
-        return
-
-    queries = monday_client.inject_all_board_ids(response.queries)
-    if response.action_type == "write" and response.entities.person_name:
-        from config import BOARD_IDS
-        board_id = BOARD_IDS.get(response.entities.board or "sales", BOARD_IDS["sales"])
-        queries = await monday_client.resolve_item_id_placeholder(
-            queries, board_id, response.entities.person_name
-        )
-    results = await monday_client.execute_queries(queries)
-    raw_text = result_formatter.format_results(results, response)
-    reply_text = await response_writer.rewrite(raw_text, text, response.intent)
-    await _safe_reply(message, reply_text)
 
 
 def main() -> None:
