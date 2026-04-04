@@ -2,18 +2,20 @@
 Pre-execution validation for Monday.com write operations.
 
 Three layers:
-  1. Schema validation  — does this field exist on the board?
-  2. Type enforcement   — is the value the right type for this column?
-  3. Value enforcement  — is this label a valid option for status/dropdown?
+  1. Field resolution  — semantic/human name → canonical key via field_resolver
+  2. Type enforcement  — is the value the right type for this column?
+  3. Value enforcement — is this label a valid option for status/dropdown?
 
 Returns human-readable error strings so ARIA can tell the user exactly
 what's wrong before touching Monday.com.
 """
 
-import difflib
 import logging
 
+import difflib
+
 from monday.schema_loader import get_column_map, get_column_types, get_valid_labels
+from monday.field_resolver import resolve_values_to_set
 
 logger = logging.getLogger(__name__)
 
@@ -28,8 +30,12 @@ def validate_write(values_to_set: dict, board: str) -> list[str]:
     """
     Validate values_to_set against the board's live schema.
 
+    Resolves all field names to canonical semantic keys first, so any
+    human-readable variant ("Assigned AE", "assigned ae", etc.) is handled
+    transparently before any lookup is attempted.
+
     Args:
-        values_to_set: {semantic_field: value} dict from entities.values_to_set
+        values_to_set: {field_name: value} dict from entities.values_to_set
         board:         "sales" | "artists" | "staff"
 
     Returns:
@@ -41,25 +47,31 @@ def validate_write(values_to_set: dict, board: str) -> list[str]:
 
     column_map = get_column_map(board)
     if not column_map:
-        # Schema not loaded — don't block the write, let Monday handle it
         logger.warning("validate_write: column_map empty for board=%s — skipping", board)
         return []
 
-    column_types = get_column_types(board)
-    valid_labels = get_valid_labels(board)
+    # ── Field resolution ───────────────────────────────────────────────────────
+    # Normalize all keys before any validation.  "Assigned AE" → "assigned_ae", etc.
+    resolved, unresolved = resolve_values_to_set(values_to_set, board)
+
     errors: list[str] = []
 
-    for field, value in values_to_set.items():
-        field_lower = field.lower()
+    # Unresolvable fields get a clean, user-facing error (no internal field names exposed)
+    for field in unresolved:
+        errors.append(
+            f"'{field}' doesn't match any column on the {board} board. "
+            f"Try a different field name or rephrase your request."
+        )
 
-        # ── 1. Schema validation ───────────────────────────────
-        col_id = column_map.get(field_lower)
+    # ── Type + value validation on resolved fields ─────────────────────────────
+    column_types = get_column_types(board)
+    valid_labels = get_valid_labels(board)
+
+    for field, value in resolved.items():
+        col_id = column_map.get(field)
         if col_id is None:
-            known = ", ".join(sorted(column_map.keys()))
-            errors.append(
-                f"'{field}' doesn't exist on the {board} board. "
-                f"Valid fields: {known}."
-            )
+            # Should never happen after successful resolution, but guard anyway
+            logger.error("validate_write: resolved field '%s' missing from column_map", field)
             continue
 
         col_type = column_types.get(col_id, "unknown")
@@ -69,7 +81,7 @@ def validate_write(values_to_set: dict, board: str) -> list[str]:
         else:
             str_val = str(value).strip()
 
-        # ── 2. Type enforcement ────────────────────────────────
+        # ── 1. Numeric type enforcement ────────────────────────────────────────
         if col_type in _NUMERIC_TYPES:
             try:
                 float(str_val)
@@ -80,7 +92,7 @@ def validate_write(values_to_set: dict, board: str) -> list[str]:
                 )
             continue
 
-        # ── 3. Value enforcement (status / dropdown) ───────────
+        # ── 2. Label value enforcement (status / dropdown) ─────────────────────
         if col_type in _LABEL_TYPES:
             labels = valid_labels.get(col_id)
             if labels:
@@ -101,11 +113,8 @@ def validate_write(values_to_set: dict, board: str) -> list[str]:
 
 def _closest_label(query: str, labels: set[str]) -> str | None:
     """Find the closest valid label to the query string."""
-    # 1. Substring match (query is contained in a label or vice versa)
     for label in sorted(labels):
         if query in label or label in query:
             return label
-
-    # 2. Fuzzy match via difflib
     matches = difflib.get_close_matches(query, labels, n=1, cutoff=0.55)
     return matches[0] if matches else None
