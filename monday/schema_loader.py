@@ -46,7 +46,7 @@ SEMANTIC_TO_TITLE: dict[str, list[str]] = {
 
 async def load_all() -> None:
     """Called once at startup. Fetches columns and group IDs for all boards."""
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
         for board_name, board_id in BOARD_IDS.items():
             await _load_board(board_name, board_id, session)
     logger.info("Board schemas loaded: %s", {k: len(v["columns"]) for k, v in _schema.items()})

@@ -13,6 +13,7 @@ Flow for every group message:
 
 import logging
 from telegram import Update
+from telegram.error import BadRequest
 from telegram.ext import ContextTypes
 from telegram.constants import ChatAction
 
@@ -37,9 +38,12 @@ async def _send(context, chat_id: int, text: str, reply_to_message_id: int = Non
         kwargs["reply_to_message_id"] = reply_to_message_id
     try:
         await context.bot.send_message(**kwargs)
-    except Exception:
-        kwargs.pop("parse_mode")
-        await context.bot.send_message(**kwargs)
+    except BadRequest as e:
+        if "parse" in str(e).lower():
+            kwargs.pop("parse_mode")
+            await context.bot.send_message(**kwargs)
+        else:
+            raise
 
 
 async def handle_group_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

@@ -7,7 +7,7 @@ Used to build the conversation transcript injected into ARIA's context.
 
 from collections import deque
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 import logging
 
@@ -46,8 +46,8 @@ class GroupContext:
         if not user:
             return
 
-        username = user.username or user.first_name
-        display_name = user.first_name
+        username = user.username or user.first_name or "Unknown"
+        display_name = user.first_name or ""
         if user.last_name:
             display_name += f" {user.last_name}"
 
@@ -97,7 +97,7 @@ class GroupContext:
             username="ARIA",
             display_name="ARIA",
             text=text[:500],  # cap length to keep context sane
-            timestamp=datetime.now(),
+            timestamp=datetime.now(timezone.utc),
         )
         self.messages.append(stored)
 
@@ -109,7 +109,7 @@ class GroupContext:
         return {
             "user_id": user.id,
             "username": user.username or user.first_name,
-            "display_name": user.first_name + (f" {user.last_name}" if user.last_name else ""),
+            "display_name": (user.first_name or "") + (f" {user.last_name}" if user.last_name else ""),
         }
 
     def get_last_bot_message_id(self, bot_id: int) -> Optional[int]:
