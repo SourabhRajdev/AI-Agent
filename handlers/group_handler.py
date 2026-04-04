@@ -26,7 +26,6 @@ from monday import client as monday_client
 from monday import result_formatter
 from monday.schema_loader import get_column_map
 from monday.write_validator import validate_write
-from monday.field_resolver import resolve_values_to_set
 from config import ALLOWED_CHAT_IDS
 
 logger = logging.getLogger(__name__)
@@ -144,16 +143,6 @@ async def _execute_and_reply(
 ) -> None:
     """Run Monday queries, rewrite results as natural language, send."""
 
-    # ── Field name resolution ──────────────────────────────────
-    # Normalize any human-readable field names in values_to_set to canonical
-    # semantic keys before validation or execution.
-    # "Assigned AE" / "assigned ae" / "AE" → "assigned_ae", etc.
-    if response.action_type == "write" and response.entities.values_to_set:
-        board_key = response.entities.board or ""
-        resolved_vals, _ = resolve_values_to_set(response.entities.values_to_set, board_key)
-        if resolved_vals:
-            response.entities.values_to_set = resolved_vals
-
     # ── Pre-execution write validation ─────────────────────────
     if response.action_type == "write" and response.entities.values_to_set:
         val_errors = validate_write(response.entities.values_to_set, response.entities.board or "")
@@ -205,13 +194,6 @@ async def _execute_pending_write(
 ) -> None:
     """Execute a previously confirmed write operation."""
     await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
-
-    # Resolve field names in case they were stored in human-readable form
-    if pending_response.entities.values_to_set:
-        board_key = pending_response.entities.board or ""
-        resolved_vals, _ = resolve_values_to_set(pending_response.entities.values_to_set, board_key)
-        if resolved_vals:
-            pending_response.entities.values_to_set = resolved_vals
 
     queries = monday_client.inject_all_board_ids(pending_response.queries)
 
