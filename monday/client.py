@@ -4,6 +4,7 @@ Handles execution, ITEM_ID_PLACEHOLDER resolution, and rate limiting.
 """
 
 import asyncio
+import json
 import logging
 import re
 from typing import Any
@@ -148,18 +149,18 @@ async def verify_write_result(mutation_results: list[dict]) -> list[dict]:
     Returns the items(ids:[...]) query result, or [] if no item ID was found.
     """
     item_id = _extract_written_item_id(mutation_results)
-    if not item_id:
+    if not item_id or not item_id.isdigit():
         return []
 
-    query = """
-    query {
-      items(ids: [%s]) {
+    query = f"""
+    query {{
+      items(ids: [{item_id}]) {{
         id
         name
-        column_values { id title text }
-      }
-    }
-    """ % item_id
+        column_values {{ id title text }}
+      }}
+    }}
+    """
 
     logger.info("Verifying write — reading back item %s", item_id)
     async with aiohttp.ClientSession() as session:
@@ -230,7 +231,7 @@ def inject_server_filters(queries: list[str], filters: list, column_map: dict) -
             logger.debug("inject_server_filters: no column_id for field=%s", f.field)
             continue
         rules.append(
-            f'{{ column_id: "{col_id}", compare_value: ["{f.value}"], operator: {monday_op} }}'
+            f'{{ column_id: "{col_id}", compare_value: [{json.dumps(str(f.value))}], operator: {monday_op} }}'
         )
 
     if not rules:
