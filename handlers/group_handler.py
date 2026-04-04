@@ -78,14 +78,17 @@ async def handle_group_message(update: Update, context: ContextTypes.DEFAULT_TYP
     if not invoked:
         return  # passive — store only, no response
 
+    # Strip @mention early — used for both confirmation check and chain invocation
+    direct_request = context_builder.strip_mention(text, bot_username)
+
     # ── 3. Pending write check ─────────────────────────────────
     pending = confirmation.get(chat_id, user_id)
     if pending:
-        if confirmation.is_confirmation(text):
+        if confirmation.is_confirmation(direct_request):
             confirmation.clear(chat_id, user_id)
             await _execute_pending_write(pending, chat_id, message.message_id, context)
             return
-        elif confirmation.is_cancellation(text):
+        elif confirmation.is_cancellation(direct_request):
             confirmation.clear(chat_id, user_id)
             await _send(context, chat_id, "Got it — cancelled.", message.message_id)
             return
@@ -95,7 +98,6 @@ async def handle_group_message(update: Update, context: ContextTypes.DEFAULT_TYP
     await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
 
     invoker = group_ctx.get_invoker(message)
-    direct_request = context_builder.strip_mention(text, bot_username)
 
     if is_private:
         context_block = context_builder.build_private(text, invoker["username"])
@@ -155,6 +157,10 @@ async def _execute_and_reply(
 
     queries = monday_client.inject_all_board_ids(response.queries)
 
+    # Translate semantic field names in mutation column_values to real column IDs
+    if response.action_type == "write":
+        queries = monday_client.inject_column_ids(queries, response.entities.board or "")
+
     # Push numeric filters (pricing, experience, etc.) to Monday server-side
     if response.action_type == "read" and response.entities.filters:
         column_map = get_column_map(response.entities.board or "")
@@ -172,15 +178,18 @@ async def _execute_and_reply(
     # ── VERIFY ─────────────────────────────────────────────────
     if response.action_type == "write":
         verify_results = await monday_client.verify_write_result(results)
-        raw_text = (
-            result_formatter.format_write_verification(verify_results, response.intent)
-            if verify_results
-            else result_formatter.format_results(results, response)
-        )
+        if verify_results:
+            # Write succeeded — format the read-back confirmation
+            raw_text = result_formatter.format_write_verification(verify_results, response.intent)
+            reply = await response_writer.rewrite(raw_text, original_request, response.intent)
+        else:
+            # Write failed — surface the raw Monday.com error directly,
+            # do NOT pass through response_writer which obscures the real cause
+            reply = result_formatter.format_results(results, response)
     else:
         raw_text = result_formatter.format_results(results, response)
+        reply = await response_writer.rewrite(raw_text, original_request, response.intent)
 
-    reply = await response_writer.rewrite(raw_text, original_request, response.intent)
     await _send(context, chat_id, reply, reply_to_id)
     if group_ctx:
         group_ctx.add_bot_response(reply)
@@ -196,6 +205,7 @@ async def _execute_pending_write(
     await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
 
     queries = monday_client.inject_all_board_ids(pending_response.queries)
+    queries = monday_client.inject_column_ids(queries, pending_response.entities.board or "")
 
     if pending_response.entities.person_name:
         board_id = _board_id_from_response(pending_response)
@@ -207,11 +217,11 @@ async def _execute_pending_write(
 
     # ── VERIFY ─────────────────────────────────────────────────
     verify_results = await monday_client.verify_write_result(results)
-    text = (
-        result_formatter.format_write_verification(verify_results, pending_response.intent)
-        if verify_results
-        else result_formatter.format_results(results, pending_response)
-    )
+    if verify_results:
+        text = result_formatter.format_write_verification(verify_results, pending_response.intent)
+    else:
+        # Surface the raw Monday.com error — don't rewrite it
+        text = result_formatter.format_results(results, pending_response)
 
     await _send(context, chat_id, text, reply_to_id)
     ctx = gc_store.get(chat_id)
