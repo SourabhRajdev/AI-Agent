@@ -190,6 +190,56 @@ def inject_all_board_ids(queries: list[str]) -> list[str]:
     return [_ensure_items_page_limit(inject_board_ids(q, "")) for q in queries]
 
 
+# Matches the column_values string argument in a mutation, e.g.:
+#   column_values: "{\"status\":{\"label\":\"Contracted\"},\"assigned_ae\":\"Ansh\"}"
+_COL_VALUES_RE = re.compile(r'(column_values:\s*)"((?:[^"\\]|\\.)*)"')
+
+
+def inject_column_ids(queries: list[str], board: str) -> list[str]:
+    """
+    In write mutations, translate any semantic field names inside the
+    column_values JSON string to their actual Monday.com column IDs.
+
+    Handles the case where the model uses "assigned_ae" (semantic name)
+    instead of the real column ID (e.g. "text_mm1rrhc0").  Column IDs
+    that are already correct pass through unchanged (field_resolver step 1).
+    """
+    if not board or board == "all":
+        return queries
+
+    from monday.field_resolver import resolve_to_column_id
+
+    result = []
+    for q in queries:
+        if "column_values" not in q:
+            result.append(q)
+            continue
+
+        def _replace(m: re.Match) -> str:
+            prefix = m.group(1)
+            escaped_json = m.group(2)
+            # Unescape the embedded JSON string
+            json_str = escaped_json.replace('\\"', '"').replace('\\\\', '\\')
+            try:
+                data = json.loads(json_str)
+            except (json.JSONDecodeError, ValueError):
+                return m.group(0)  # unparseable — leave as-is
+
+            translated = {}
+            for key, val in data.items():
+                col_id = resolve_to_column_id(key, board)
+                translated[col_id if col_id else key] = val
+
+            new_json = json.dumps(translated, separators=(",", ":"), ensure_ascii=False)
+            # Re-escape for embedding back in the GraphQL string
+            re_escaped = new_json.replace("\\", "\\\\").replace('"', '\\"')
+            return f'{prefix}"{re_escaped}"'
+
+        result.append(_COL_VALUES_RE.sub(_replace, q))
+
+    return result
+
+
 def _ensure_items_page_limit(query: str, default_limit: int = 200) -> str:
     """
     If a query contains items_page without a limit argument, inject limit: N.

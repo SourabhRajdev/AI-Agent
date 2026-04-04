@@ -64,15 +64,35 @@ _CONFIRMATIONS = frozenset([
     "absolutely", "sounds good", "done", "go", "execute",
 ])
 
+# Strong single-word affirmatives that may lead a longer sentence
+_LEADING_YES = frozenset(["yes", "yeah", "yep", "yup", "ok", "okay", "sure", "absolutely"])
+
 _CANCELLATIONS = frozenset([
     "no", "nope", "nah", "cancel", "nevermind", "never mind",
     "stop", "don't", "dont", "skip", "forget it", "abort", "drop it",
 ])
 
+_CANCEL_WORDS = frozenset(["no", "cancel", "stop", "don't", "dont", "nevermind", "abort"])
+
+
+def _clean(text: str) -> str:
+    """Strip @mentions and normalise for intent matching."""
+    import re
+    return re.sub(r"@\w+", "", text).strip().lower().rstrip("!?.")
+
 
 def is_confirmation(text: str) -> bool:
-    return text.strip().lower().rstrip("!?.") in _CONFIRMATIONS
+    normalized = _clean(text)
+    # Exact match ("yes", "ok", "go ahead", etc.)
+    if normalized in _CONFIRMATIONS:
+        return True
+    # Leading affirmative: "yes do it", "yes go ahead", "yes whatever you need"
+    # Reject if any cancellation word also appears to avoid "yes but cancel"
+    words = normalized.split()
+    if words and words[0] in _LEADING_YES:
+        return not bool(set(words[1:]) & _CANCEL_WORDS)
+    return False
 
 
 def is_cancellation(text: str) -> bool:
-    return text.strip().lower().rstrip("!?.") in _CANCELLATIONS
+    return _clean(text) in _CANCELLATIONS
